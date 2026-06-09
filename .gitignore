@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native builds
+android/app/build/
+android/.gradle/
+android/build/
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Testing
+coverage/
+
+# Build outputs
+*.apk
+*.aab
+*.ipa
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

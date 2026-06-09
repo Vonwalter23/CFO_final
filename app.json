@@ -1,0 +1,44 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "expo": {
+    "name": "CFO del Hogar",
+    "slug": "cfo-hogar",
+    "owner": "vonwalter",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1923"
+    },
+    "android": {
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F1923"
+      },
+      "package": "com.cfohogar.app",
+      "permissions": [
+        "INTERNET",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
+    ],
+    "scheme": "cfohogar",
+    "extra": {
+      "eas": {
+        "projectId": "81d9358b-1d0f-4e41-bd84-cdcf61004ab8"
+      },
+      "googleClientId": "909029635799-1u27mgg14huhto1u845b9uijs1v1id82.apps.googleusercontent.com"
+    }
+  }
+}

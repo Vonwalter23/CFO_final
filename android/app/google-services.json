@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "909029635799",
+    "project_id": "cfo-hogar-dd977",
+    "storage_bucket": "cfo-hogar-dd977.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:909029635799:android:afbc518802a8fa71eb2292",
+        "android_client_info": {
+          "package_name": "com.cfohogar.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "909029635799-65vhg85civ0n2oauihde60bs62fapfnq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cfohogar.app",
+            "certificate_hash": "598d570349388e2a0128a800e15309307e463755"
+          }
+        },
+        {
+          "client_id": "909029635799-g41fsqrnsb5non8mmc7ab9cc5q3k6ddt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cfohogar.app",
+            "certificate_hash": "c6c894f256b19fc52ef13eb57167504bcefbff10"
+          }
+        },
+        {
+          "client_id": "909029635799-l415bkj2ovl8na7ricj7lvvrau59sic2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cfohogar.app",
+            "certificate_hash": "51ad616e2945233ea3f08d16683d73aba40c21cf"
+          }
+        },
+        {
+          "client_id": "909029635799-1u27mgg14huhto1u845b9uijs1v1id82.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB62JKbyLJ_yCgMPqetFbk-M7eB6Z7IaMA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "909029635799-1u27mgg14huhto1u845b9uijs1v1id82.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
