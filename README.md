@@ -1,36 +1,160 @@
 # CFO del Hogar
 
-Aplicacion movil de finanzas personales para Argentina con Agente CFO con IA (Groq).
+Aplicación móvil de finanzas personales para Argentina con Agente CFO con IA (Groq).
 
-## Caracteristicas
+## 📱 Funcionalidades
 
-- Dashboard financiero en tiempo real
-- Balance Historico con graficos
-- Agente CFO con IA (Groq)
-- Autenticacion Google (Firebase)
-- Tema oscuro/claro
+### Core
+- **Dashboard financiero** en tiempo real
+- **Balance histórico** con gráficos interactivos
+- **Agente CFO con IA** (Groq) para análisis y consejos
+- **Autenticación Google** (Firebase)
+- **Tema oscuro/claro**
 
-## Instalacion
+### Gestión de Transacciones
+- Agregar ingresos y gastos
+- Categorización automática
+- Historial completo con filtros
+
+### Respaldo y Restauración (NUEVO v1.0.0)
+- **Backup en Google Sheets**: Guarda transacciones, objetivos y perfil
+- **Restaurar backup**: Recupera datos desde Google Sheets
+- **Exportar como CSV**: Backup local completo
+
+### Objetivos de Ahorro
+- Crear metas de ahorro
+- Seguimiento de progreso
+- Fechas de vencimiento
+
+---
+
+## 🚀 Instalación
 
 ```bash
+# Clonar repositorio
+git clone https://github.com/Vonwalter23/CFO_11-06-26.git
+cd CFO_11-06-26
+
+# Instalar dependencias
 npm install
+
+# Iniciar desarrollo
 npx expo start
 ```
 
-## Configuracion
+---
 
-Crear archivo `.env`:
-```
+## ⚙️ Configuración
+
+### 1. Variables de Entorno
+
+Crear archivo `.env` en la raíz del proyecto:
+```bash
 EXPO_PUBLIC_GROQ_API_KEY=tu_api_key_de_groq
 ```
 
-## Documentacion
+### 2. Firebase/Google Cloud
 
-Ver [docs/MANUAL.md](docs/MANUAL.md) para documentacion completa.
+1. Ir a [Firebase Console](https://console.firebase.google.com/)
+2. Crear proyecto o usar existente: `cfo-hogar-dd977`
+3. Registrar app Android:
+   - Package name: `com.cfohogar.app`
+   - Agregar SHA-1 del certificado de firma
+4. Descargar `google-services.json`
+5. Reemplazar en:
+   - `android/app/google-services.json`
+   - `google-services.json` (raíz)
 
-## Repositorio
+### 3. Google OAuth Scopes
 
-https://github.com/Vonwalter23/CFO_final
+En Google Cloud Console, configurar los siguientes scopes:
+- `https://www.googleapis.com/auth/spreadsheets`
+- `https://www.googleapis.com/auth/drive.file`
+- `https://www.googleapis.com/auth/drive.readonly`
+
+### 4. Compilar APK
+
+```bash
+# Asegurar keystore
+cp /ruta/backup/cfohogar.jks android/app/cfohogar.jks
+
+# Prebuild (si es necesario)
+npx expo prebuild --platform android
+
+# Compilar release
+cd android
+./gradlew assembleRelease
+```
+
+---
+
+## 📋 Permisos OAuth Requeridos
+
+| Scope | Uso |
+|-------|-----|
+| `spreadsheets` | Crear y escribir backups en Google Sheets |
+| `drive.file` | Acceso limitado a archivos creados por la app |
+| `drive.readonly` | Buscar backups existentes en Google Drive |
+
+---
+
+## 🔑 Credenciales del Proyecto
+
+| Item | Valor |
+|------|-------|
+| Package name | `com.cfohogar.app` |
+| Keystore | `android/app/cfohogar.jks` |
+| Contraseña keystore | `cfohogar123` |
+| Alias | `cfohogar` |
+| SHA-1 | `51:AD:61:6E:29:45:23:3E:A3:F0:8D:16:68:3D:73:AB:A4:0C:21:CF` |
+| webClientId | `909029635799-1u27mgg14huhto1u845b9uijs1v1id82.apps.googleusercontent.com` |
+| Proyecto Firebase | `cfo-hogar-dd977` |
+
+---
+
+## 📂 Estructura del Proyecto
+
+```
+CFO_11-06-26/
+├── app/                    # Pantallas (Expo Router)
+│   ├── (tabs)/            # Tabs de navegación
+│   │   ├── dashboard.tsx  # Dashboard principal
+│   │   ├── add.tsx        # Agregar transacción
+│   │   ├── transactions.tsx # Historial
+│   │   ├── chat.tsx       # Agente CFO con IA
+│   │   └── settings.tsx   # Perfil y configuración
+│   └── index.tsx          # Login
+├── context/               # Contextos de React
+│   └── AuthContext.tsx    # Autenticación Google
+├── services/              # Servicios
+│   └── database.ts        # Almacenamiento local
+├── constants/             # Constantes
+│   └── theme.ts           # Temas y estilos
+├── android/               # Proyecto Android nativo
+│   └── app/
+│       ├── build.gradle   # Configuración de compilación
+│       └── cfohogar.jks   # Keystore de producción
+├── google-services.json   # Firebase config
+├── app.json               # Configuración Expo
+└── package.json           # Dependencias
+```
+
+---
+
+## 📦 Datos Respaldados
+
+### Google Sheets
+El backup incluye:
+- **Transacciones**: ID, tipo, categoría, subcategoría, monto, descripción, fecha, creado
+- **Objetivos**: ID, nombre, meta, actual, vencimiento, creado
+- **Perfil**: perfil_financiero, moneda, email, fecha_backup
+
+### CSV Export
+El export local incluye:
+- Información del backup (fecha, usuario, totales)
+- Todas las transacciones con fechas completas
+- Todos los objetivos
+- Configuración del perfil
 
 ---
 

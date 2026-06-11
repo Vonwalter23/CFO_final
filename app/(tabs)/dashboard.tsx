@@ -233,6 +233,24 @@ export default function DashboardScreen() {
         <Ionicons name="chevron-forward" size={20} color={theme.primary} />
       </TouchableOpacity>
 
+      {/* Botón Análisis de Gastos */}
+      <TouchableOpacity
+        style={[styles.balanceHistoricoBtn, { backgroundColor: theme.accent + "15", borderColor: theme.accent }]}
+        onPress={() => router.push("/analisis-gastos")}
+        activeOpacity={0.85}
+      >
+        <View style={[styles.balanceHistoricoIcon, { backgroundColor: theme.accent + "22" }]}>
+          <Ionicons name="pie-chart" size={22} color={theme.accent} />
+        </View>
+        <View style={styles.balanceHistoricoContent}>
+          <Text style={[styles.balanceHistoricoTitle, { color: theme.textPrimary }]}>Análisis de Gastos</Text>
+          <Text style={[styles.balanceHistoricoSubtitle, { color: theme.textSecondary }]}>
+            Ver gastos por categoría y período
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={theme.accent} />
+      </TouchableOpacity>
+
       {transactions.length === 0 && (
         <View style={styles.emptyState}>
           <Ionicons name="wallet-outline" size={48} color={theme.textMuted} />

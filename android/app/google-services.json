@@ -14,22 +14,6 @@
       },
       "oauth_client": [
         {
-          "client_id": "909029635799-65vhg85civ0n2oauihde60bs62fapfnq.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.cfohogar.app",
-            "certificate_hash": "598d570349388e2a0128a800e15309307e463755"
-          }
-        },
-        {
-          "client_id": "909029635799-g41fsqrnsb5non8mmc7ab9cc5q3k6ddt.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.cfohogar.app",
-            "certificate_hash": "c6c894f256b19fc52ef13eb57167504bcefbff10"
-          }
-        },
-        {
           "client_id": "909029635799-l415bkj2ovl8na7ricj7lvvrau59sic2.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

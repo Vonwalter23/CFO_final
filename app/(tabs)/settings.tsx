@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Modal,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,33 +12,69 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
-import { getAllTransactions, getObjectives, updateLastBackup, getUserProfile, UserProfile } from "@/services/database";
+import { 
+  getAllTransactions, getObjectives, updateLastBackup, getUserProfile, UserProfile,
+  insertTransaction, insertObjective, saveUserProfile
+} from "@/services/database";
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { isDark, toggleTheme, theme } = useTheme();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [backupInfo, setBackupInfo] = useState<{id: string, name: string, date: string} | null>(null);
 
   useFocusEffect(useCallback(() => {
     const load = async () => setProfile(await getUserProfile());
     load();
   }, []));
 
+  // ─── Helper: obtener token ────────────────────────────────────
+  const getGoogleToken = async (): Promise<string | null> => {
+    try {
+      const tokens = await GoogleSignin.getTokens();
+      return tokens.accessToken;
+    } catch {
+      return await AsyncStorage.getItem("@cfo_google_token");
+    }
+  };
+
   // ─── Export CSV ─────────────────────────────────────────────
   const exportCSV = async () => {
     setExporting(true);
     try {
       const txs = await getAllTransactions();
-      const header = "id,tipo,categoria,subcategoria,monto,descripcion,fecha\n";
-      const rows = txs.map(t =>
-        `${t.id},${t.type},${t.category},${t.subcategory ?? ""},${t.amount},"${t.description ?? ""}",${t.date}`
+      const objs = await getObjectives();
+      const currentProfile = await getUserProfile();
+      const backupDate = new Date().toISOString().split('T')[0];
+      
+      // Header con info del backup
+      const infoSection = `CFO del Hogar - Backup CSV\nFecha: ${backupDate}\nUsuario: ${user?.email ?? ""}\nTotal transacciones: ${txs.length}\nTotal objetivos: ${objs.length}\n\n`;
+      
+      // Transacciones
+      const txHeader = "=== TRANSACCIONES ===\nid,tipo,categoria,subcategoria,monto,descripcion,fecha,creado\n";
+      const txRows = txs.map(t =>
+        `${t.id},${t.type},${t.category},${t.subcategory ?? ""},${t.amount},"${(t.description ?? "").replace(/"/g, '""')}",${t.date},${t.created_at}`
       ).join("\n");
-      const csv = header + rows;
-      const path = FileSystem.documentDirectory + "cfo_hogar_export.csv";
+      
+      // Objetivos
+      const objHeader = "\n\n=== OBJETIVOS ===\nid,nombre,meta,actual,vencimiento,creado\n";
+      const objRows = objs.map(o =>
+        `${o.id},"${o.name}",${o.target_amount},${o.current_amount},${o.deadline ?? ""},${o.created_at}`
+      ).join("\n");
+      
+      // Perfil
+      const profileHeader = "\n\n=== PERFIL ===\nperfil_financiero,moneda\n";
+      const profileData = `${currentProfile?.financial_profile ?? "moderado"},${currentProfile?.currency ?? "ARS"}`;
+      
+      const csv = infoSection + txHeader + txRows + objHeader + objRows + profileHeader + profileData;
+      
+      const path = FileSystem.documentDirectory + `cfo_hogar_backup_${backupDate}.csv`;
       await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Exportar transacciones" });
+      await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Backup CFO del Hogar" });
     } catch (e) {
       Alert.alert("Error", "No se pudo exportar el archivo.");
     } finally {
@@ -50,16 +86,7 @@ export default function SettingsScreen() {
   const backupToSheets = async () => {
     setBackingUp(true);
     try {
-      // Obtener tokens frescos de Google Sign-In
-      let token: string | null = null;
-      try {
-        const tokens = await GoogleSignin.getTokens();
-        token = tokens.accessToken;
-      } catch (e) {
-        // Si falla getTokens, intentar con el token guardado
-        token = await AsyncStorage.getItem("@cfo_google_token");
-      }
-      
+      const token = await getGoogleToken();
       if (!token) {
         Alert.alert("Sin sesión", "Volvé a iniciar sesión para hacer backup.");
         return;
@@ -67,18 +94,9 @@ export default function SettingsScreen() {
 
       const txs = await getAllTransactions();
       const objs = await getObjectives();
+      const currentProfile = await getUserProfile();
 
-      // Verificar que el token funcione probando la API de Sheets
-      const testRes = await fetch("https://sheets.googleapis.com/v4/spreadsheets?title=CFO%20del%20Hogar%20Test", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!testRes.ok && testRes.status !== 404) {
-        const errorData = await testRes.json().catch(() => ({}));
-        throw new Error(`Token inválido (${testRes.status}): ${errorData.error?.message ?? "Verificá los permisos de Google en la app"}`);
-      }
-
-      // Create or find spreadsheet
+      // Create spreadsheet
       const ssTitle = "CFO del Hogar - Backup";
       const createRes = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
         method: "POST",
@@ -88,6 +106,7 @@ export default function SettingsScreen() {
           sheets: [
             { properties: { title: "Transacciones" } },
             { properties: { title: "Objetivos" } },
+            { properties: { title: "Perfil" } },
           ],
         }),
       });
@@ -101,10 +120,10 @@ export default function SettingsScreen() {
 
       // Write transactions
       const txRows = [
-        ["ID", "Tipo", "Categoría", "Monto", "Descripción", "Fecha"],
-        ...txs.map(t => [t.id, t.type, t.category, t.amount, t.description ?? "", t.date]),
+        ["ID", "Tipo", "Categoría", "Subcategoría", "Monto", "Descripción", "Fecha", "Creado"],
+        ...txs.map(t => [t.id, t.type, t.category, t.subcategory ?? "", t.amount, t.description ?? "", t.date, t.created_at]),
       ];
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Transacciones!A1:F${txRows.length}?valueInputOption=RAW`, {
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Transacciones!A1:H${txRows.length}?valueInputOption=RAW`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ values: txRows }),
@@ -112,22 +131,264 @@ export default function SettingsScreen() {
 
       // Write objectives
       const objRows = [
-        ["ID", "Nombre", "Meta", "Actual", "Vencimiento"],
-        ...objs.map(o => [o.id, o.name, o.target_amount, o.current_amount, o.deadline ?? ""]),
+        ["ID", "Nombre", "Meta", "Actual", "Vencimiento", "Creado"],
+        ...objs.map(o => [o.id, o.name, o.target_amount, o.current_amount, o.deadline ?? "", o.created_at]),
       ];
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Objetivos!A1:E${objRows.length}?valueInputOption=RAW`, {
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Objetivos!A1:F${objRows.length}?valueInputOption=RAW`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ values: objRows }),
       });
 
+      // Write profile
+      const profileRows = [
+        ["Configuración", "Valor"],
+        ["financial_profile", currentProfile?.financial_profile ?? "moderado"],
+        ["currency", currentProfile?.currency ?? "ARS"],
+        ["email", user?.email ?? ""],
+        ["backup_date", new Date().toISOString()],
+      ];
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Perfil!A1:B${profileRows.length}?valueInputOption=RAW`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ values: profileRows }),
+      });
+
       await updateLastBackup();
       setProfile(await getUserProfile());
-      Alert.alert("✅ Backup exitoso", `Tus datos fueron guardados en Google Sheets:\n"${ssTitle}"`);
+      Alert.alert("✅ Backup exitoso", `Tus datos fueron guardados en Google Sheets:\n"${ssTitle}"\n\nIncluye: Transacciones, Objetivos y Perfil`);
     } catch (e: any) {
       Alert.alert("Error en backup", e.message ?? "No se pudo completar el backup.");
     } finally {
       setBackingUp(false);
+    }
+  };
+
+  // ─── Buscar último backup ─────────────────────────────────────
+  const searchBackup = async (): Promise<{id: string, name: string, date: string} | null> => {
+    const token = await getGoogleToken();
+    if (!token) return null;
+
+    try {
+      // Buscar usando la API de archivos de Google Drive
+      // Usa contains en lugar de = para mayor flexibilidad
+      const query = encodeURIComponent("name contains 'CFO del Hogar' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime)&pageSize=20`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (!res.ok) {
+        console.log("Drive API error:", res.status, await res.text());
+        return null;
+      }
+      
+      const data = await res.json();
+      console.log("Backup search result:", JSON.stringify(data));
+      
+      const files = data.files || [];
+      if (files.length === 0) {
+        // Intentar búsqueda más broad
+        const broadQuery = encodeURIComponent("name contains 'CFO' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+        const broadRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=${broadQuery}&fields=files(id,name,createdTime,modifiedTime)&pageSize=20`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (broadRes.ok) {
+          const broadData = await broadRes.json();
+          const broadFiles = broadData.files || [];
+          if (broadFiles.length > 0) {
+            console.log("Broad search found:", broadFiles);
+          }
+        }
+      }
+      
+      // Tomar el más reciente si hay varios
+      if (files.length > 0) {
+        // Ordenar por fecha de modificación (más reciente primero)
+        const sorted = files.sort((a: any, b: any) => 
+          new Date(b.modifiedTime || b.createdTime).getTime() - 
+          new Date(a.modifiedTime || a.createdTime).getTime()
+        );
+        const backup = sorted[0];
+        return {
+          id: backup.id,
+          name: backup.name,
+          date: backup.modifiedTime || backup.createdTime,
+        };
+      }
+      return null;
+    } catch (e) {
+      console.log("Search error:", e);
+      return null;
+    }
+  };
+
+  // ─── Restaurar desde Google Sheets ───────────────────────────
+  const restoreFromSheets = async () => {
+    setRestoring(true);
+    try {
+      const token = await getGoogleToken();
+      if (!token) {
+        Alert.alert("Sin sesión", "Volvé a iniciar sesión para restaurar.");
+        return;
+      }
+
+      // Buscar backup
+      const backup = await searchBackup();
+      if (!backup) {
+        Alert.alert(
+          "Sin backup encontrado",
+          "No se encontró un backup de Google Sheets. Hacé primero un backup para tener uno disponible.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Mostrar opciones
+      Alert.alert(
+        "Restaurar Backup",
+        `Se encontró un backup: "${backup.name}"\n\nElegí cómo restaurar:`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          { 
+            text: "Fusionar", 
+            onPress: () => performRestore(token, backup.id, "merge")
+          },
+          { 
+            text: "Sobrescribir todo", 
+            style: "destructive",
+            onPress: () => performRestore(token, backup.id, "replace")
+          },
+        ]
+      );
+
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "No se pudo buscar el backup.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const performRestore = async (token: string, ssId: string, mode: "merge" | "replace") => {
+    try {
+      // Leer transacciones
+      const txRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Transacciones`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Leer objetivos
+      const objRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Objetivos`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Leer perfil
+      const profileRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Perfil`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      let restoredTx = 0;
+      let restoredObj = 0;
+
+      // Restaurar transacciones
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        const rows = txData.values || [];
+        
+        // Skip header row
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (row.length >= 6) {
+            const tx = {
+              id: String(row[0]),
+              type: row[1] as "income" | "expense",
+              category: String(row[2]),
+              subcategory: row[3] ? String(row[3]) : undefined,
+              amount: parseFloat(String(row[4])) || 0,
+              description: row[5] ? String(row[5]) : undefined,
+              date: String(row[6]),
+            };
+            
+            if (mode === "replace" || !tx.id.startsWith("TXN_LOCAL_")) {
+              await insertTransaction(tx);
+              restoredTx++;
+            }
+          }
+        }
+      }
+
+      // Restaurar objetivos
+      if (objRes.ok) {
+        const objData = await objRes.json();
+        const rows = objData.values || [];
+        
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (row.length >= 4) {
+            const obj = {
+              id: String(row[0]),
+              name: String(row[1]),
+              target_amount: parseFloat(String(row[2])) || 0,
+              current_amount: row[3] ? parseFloat(String(row[3])) : 0,
+              deadline: row[4] ? String(row[4]) : undefined,
+            };
+            
+            await insertObjective(obj);
+            restoredObj++;
+          }
+        }
+      }
+
+      // Restaurar perfil
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        const rows = profileData.values || [];
+        
+        const profileUpdates: any = {};
+        for (const row of rows) {
+          if (row[0] === "financial_profile") profileUpdates.financial_profile = row[1];
+          if (row[0] === "currency") profileUpdates.currency = row[1];
+        }
+        
+        if (Object.keys(profileUpdates).length > 0) {
+          const currentProfile = await getUserProfile();
+          await saveUserProfile({
+            email: currentProfile?.email ?? user?.email ?? "",
+            name: currentProfile?.name ?? user?.name ?? "",
+            photo_url: currentProfile?.photo_url,
+          });
+          
+          // Actualizar campos específicos
+          if (profileUpdates.financial_profile) {
+            const p = await getUserProfile();
+            if (p) {
+              p.financial_profile = profileUpdates.financial_profile;
+              await AsyncStorage.setItem("@profile", JSON.stringify(p));
+            }
+          }
+          if (profileUpdates.currency) {
+            const p = await getUserProfile();
+            if (p) {
+              p.currency = profileUpdates.currency;
+              await AsyncStorage.setItem("@profile", JSON.stringify(p));
+            }
+          }
+        }
+      }
+
+      Alert.alert(
+        "✅ Restauración completa",
+        `Se restauraron:\n• ${restoredTx} transacciones\n• ${restoredObj} objetivos\n• Configuración de perfil`,
+        [{ text: "OK" }]
+      );
+
+      setProfile(await getUserProfile());
+
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "No se pudo completar la restauración.");
     }
   };
 
@@ -202,6 +463,24 @@ export default function SettingsScreen() {
               : <Text style={styles.actionBtnText}>Hacer backup</Text>}
           </TouchableOpacity>
         </View>
+        
+        {/* Botón restaurar - Separador */}
+        <View style={[styles.separator, { borderTopColor: theme.border }]} />
+        
+        <TouchableOpacity 
+          style={styles.cardRow}
+          onPress={restoreFromSheets}
+          disabled={restoring}
+        >
+          <Ionicons name="cloud-download-outline" size={20} color={theme.success} />
+          <View style={styles.cardRowInfo}>
+            <Text style={[styles.cardRowTitle, { color: theme.textPrimary }]}>Restaurar backup</Text>
+            <Text style={[styles.cardRowSub, { color: theme.textMuted }]}>Recuperar datos desde Sheets</Text>
+          </View>
+          {restoring
+            ? <ActivityIndicator size="small" color={theme.primary} />
+            : <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />}
+        </TouchableOpacity>
       </View>
 
       {/* Export */}
@@ -276,6 +555,7 @@ const styles = StyleSheet.create({
   actionBtn: { borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm, paddingVertical: 6 },
   actionBtnText: { fontSize: 12, fontWeight: "700", color: "#fff" },
   infoText: { fontSize: 14, flex: 1 },
+  separator: { borderTopWidth: 1, marginTop: SPACING.md, paddingTop: SPACING.md },
   signOutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: SPACING.sm,
     borderWidth: 1,
