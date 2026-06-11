@@ -42,6 +42,19 @@ export const deleteTransaction = async (id: string) => {
   await setJSON("@transactions", txs.filter(t => t.id !== id));
 };
 
+export const clearAllTransactions = async () => {
+  await setJSON("@transactions", []);
+};
+
+export const clearAllObjectives = async () => {
+  await setJSON("@objectives", []);
+};
+
+export const clearAllData = async () => {
+  await clearAllTransactions();
+  await clearAllObjectives();
+};
+
 // ─── OBJECTIVES ─────────────────────────────────────────────
 export const insertObjective = async (o: {
   id: string; name: string; target_amount: number; current_amount?: number; deadline?: string;

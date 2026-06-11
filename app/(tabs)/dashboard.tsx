@@ -24,11 +24,12 @@ export default function DashboardScreen() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [objectives, setObjectives] = useState<Objective[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [year, month])
+    }, [year, month, refreshKey])
   );
 
   const loadData = async () => {

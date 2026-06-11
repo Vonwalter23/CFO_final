@@ -18,12 +18,16 @@ export default function TransactionsScreen() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useFocusEffect(
-    useCallback(() => { load(); }, [year, month])
+    useCallback(() => { load(); }, [year, month, refreshKey])
   );
 
-  const load = async () => setTransactions(await getTransactionsByMonth(year, month));
+  const load = async () => {
+    const txs = await getTransactionsByMonth(year, month);
+    setTransactions(txs);
+  };
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear(y => y - 1); }
@@ -39,7 +43,10 @@ export default function TransactionsScreen() {
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar", style: "destructive",
-        onPress: async () => { await deleteTransaction(id); load(); },
+        onPress: async () => { 
+          await deleteTransaction(id); 
+          setRefreshKey(k => k + 1); // Forzar refresh de la lista
+        },
       },
     ]);
   };

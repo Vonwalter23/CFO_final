@@ -8,13 +8,14 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as DocumentPicker from "expo-document-picker";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { 
   getAllTransactions, getObjectives, updateLastBackup, getUserProfile, UserProfile,
-  insertTransaction, insertObjective, saveUserProfile
+  insertTransaction, insertObjective, saveUserProfile, clearAllData, clearAllTransactions, clearAllObjectives
 } from "@/services/database";
 
 export default function SettingsScreen() {
@@ -23,6 +24,7 @@ export default function SettingsScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [restoringCSV, setRestoringCSV] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [backupInfo, setBackupInfo] = useState<{id: string, name: string, date: string} | null>(null);
@@ -49,10 +51,12 @@ export default function SettingsScreen() {
       const txs = await getAllTransactions();
       const objs = await getObjectives();
       const currentProfile = await getUserProfile();
-      const backupDate = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const backupDate = now.toISOString().split('T')[0];
+      const backupTime = now.toTimeString().slice(0, 5).replace(':', '-'); // HH-MM
       
       // Header con info del backup
-      const infoSection = `CFO del Hogar - Backup CSV\nFecha: ${backupDate}\nUsuario: ${user?.email ?? ""}\nTotal transacciones: ${txs.length}\nTotal objetivos: ${objs.length}\n\n`;
+      const infoSection = `CFO del Hogar - Backup CSV\nFecha: ${backupDate}\nHora: ${backupTime}\nUsuario: ${user?.email ?? ""}\nTotal transacciones: ${txs.length}\nTotal objetivos: ${objs.length}\n\n`;
       
       // Transacciones
       const txHeader = "=== TRANSACCIONES ===\nid,tipo,categoria,subcategoria,monto,descripcion,fecha,creado\n";
@@ -72,9 +76,28 @@ export default function SettingsScreen() {
       
       const csv = infoSection + txHeader + txRows + objHeader + objRows + profileHeader + profileData;
       
-      const path = FileSystem.documentDirectory + `cfo_hogar_backup_${backupDate}.csv`;
+      // Guardar en Documents/CFO del Hogar con timestamp único
+      const folderPath = FileSystem.documentDirectory + "CFO_del_Hogar/";
+      const fileName = `cfo_hogar_backup_${backupDate}_${backupTime}.csv`;
+      
+      // Crear carpeta si no existe
+      const folderInfo = await FileSystem.getInfoAsync(folderPath);
+      if (!folderInfo.exists) {
+        await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
+      }
+      
+      const path = folderPath + fileName;
       await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Backup CFO del Hogar" });
+      
+      // Mostrar opciones después de guardar
+      Alert.alert(
+        "✅ Backup guardado",
+        `Archivo: ${fileName}\nCarpeta: Documents/CFO del Hogar`,
+        [
+          { text: "Compartir", onPress: () => Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Backup CFO del Hogar" }) },
+          { text: "OK", style: "cancel" }
+        ]
+      );
     } catch (e) {
       Alert.alert("Error", "No se pudo exportar el archivo.");
     } finally {
@@ -392,6 +415,223 @@ export default function SettingsScreen() {
     }
   };
 
+  // ─── Restaurar desde CSV ─────────────────────────────────────
+  const restoreFromCSV = async () => {
+    setRestoringCSV(true);
+    try {
+      // Primero buscar archivos en la carpeta de backup
+      const folderPath = FileSystem.documentDirectory + "CFO_del_Hogar/";
+      const folderInfo = await FileSystem.getInfoAsync(folderPath);
+      
+      let csvFiles: string[] = [];
+      
+      if (folderInfo.exists) {
+        const files = await FileSystem.readDirectoryAsync(folderPath);
+        csvFiles = files.filter(f => f.endsWith('.csv')).sort().reverse();
+      }
+      
+      if (csvFiles.length > 0) {
+        // Mostrar selector de archivos guardados
+        const options = [
+          ...csvFiles.map(f => ({ text: f, onPress: () => processCSVFile(folderPath + f) })),
+          { text: "Elegir otro archivo...", onPress: () => pickExternalCSV() },
+          { text: "Cancelar", style: "cancel" as const, onPress: () => setRestoringCSV(false) }
+        ];
+        
+        Alert.alert("Seleccionar backup", `Encontrados ${csvFiles.length} archivo(s) de backup:`, options);
+      } else {
+        // No hay archivos guardados, ofrecer picker externo
+        Alert.alert(
+          "Sin backups locales",
+          "No se encontraron backups en la carpeta de la app. ¿Querés buscar un archivo externo?",
+          [
+            { text: "Cancelar", style: "cancel", onPress: () => setRestoringCSV(false) },
+            { text: "Buscar archivo", onPress: () => pickExternalCSV() }
+          ]
+        );
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo acceder a los archivos de backup.");
+      setRestoringCSV(false);
+    }
+  };
+
+  // ─── Seleccionar CSV externo ────────────────────────────────
+  const pickExternalCSV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "text/csv",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processCSVFile(result.assets[0].uri);
+      } else {
+        setRestoringCSV(false);
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo seleccionar el archivo.");
+      setRestoringCSV(false);
+    }
+  };
+
+  // ─── Procesar archivo CSV ────────────────────────────────────
+  const processCSVFile = async (filePath: string) => {
+    try {
+      // Verificar si hay datos existentes
+      const existingTxs = await getAllTransactions();
+      const existingObjs = await getObjectives();
+      const hasData = existingTxs.length > 0 || existingObjs.length > 0;
+      
+      // Si hay datos, preguntar si quiere sobreescribir
+      if (hasData) {
+        Alert.alert(
+          "⚠️ Datos existentes",
+          `Hay ${existingTxs.length} transacciones y ${existingObjs.length} objetivos en la app.\n\nSi continuás, se eliminarán todos los datos actuales antes de restaurar.`,
+          [
+            { text: "Cancelar", style: "cancel", onPress: () => setRestoringCSV(false) },
+            { 
+              text: "Continuar y sobreescribir", 
+              style: "destructive",
+              onPress: async () => {
+                await clearAllData(); // Limpiar datos existentes
+                await restoreFromContent(filePath);
+              }
+            }
+          ]
+        );
+      } else {
+        // No hay datos, restaurar directamente
+        await restoreFromContent(filePath);
+      }
+    } catch (e: any) {
+      console.log("Restore CSV error:", e);
+      Alert.alert("Error", "No se pudo procesar el archivo CSV.");
+      setRestoringCSV(false);
+    }
+  };
+
+  // ─── Restaurar contenido del CSV ───────────────────────────
+  const restoreFromContent = async (filePath: string) => {
+    try {
+      const content = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      const lines = content.split("\n");
+      let restoredTx = 0;
+      let restoredObj = 0;
+      let profileUpdated = false;
+
+      // Procesar cada línea
+      let section = ""; // Track current section: TRANSACCIONES, OBJETIVOS, PERFIL
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Detectar secciones
+        if (line.includes("=== TRANSACCIONES ===")) {
+          section = "TRANSACCIONES";
+          continue;
+        }
+        if (line.includes("=== OBJETIVOS ===")) {
+          section = "OBJETIVOS";
+          continue;
+        }
+        if (line.includes("=== PERFIL ===")) {
+          section = "PERFIL";
+          continue;
+        }
+
+        // Ignorar líneas de información del backup
+        if (line.includes("CFO del Hogar") && !line.includes("===")) {
+          continue;
+        }
+        if (line.match(/^(Fecha:|Usuario:|Total |CFO del Hogar)/)) {
+          continue;
+        }
+
+        // Parsear según la sección
+        if (section === "TRANSACCIONES" && line && !line.includes("id,tipo")) {
+          const parts = line.split(",");
+          if (parts.length >= 7) {
+            // Formato: id,tipo,categoria,subcategoria,monto,descripcion,fecha,creado
+            const tx = {
+              id: parts[0],
+              type: parts[1] as "income" | "expense",
+              category: parts[2],
+              subcategory: parts[3] || undefined,
+              amount: parseFloat(parts[4]) || 0,
+              description: parts[5] ? parts[5].replace(/^"|"$/g, '').replace(/""/g, '"') : undefined,
+              date: parts[6],
+            };
+            await insertTransaction(tx);
+            restoredTx++;
+          }
+        }
+        
+        if (section === "OBJETIVOS" && line && !line.includes("id,nombre")) {
+          const parts = line.split(",");
+          if (parts.length >= 4) {
+            // Formato: id,nombre,meta,actual,vencimiento,creado
+            const obj = {
+              id: parts[0],
+              name: parts[1].replace(/^"|"$/g, ''),
+              target_amount: parseFloat(parts[2]) || 0,
+              current_amount: parts[3] ? parseFloat(parts[3]) : 0,
+              deadline: parts[4] || undefined,
+            };
+            await insertObjective(obj);
+            restoredObj++;
+          }
+        }
+        
+        if (section === "PERFIL" && line && !line.includes("perfil_financiero")) {
+          const parts = line.split(",");
+          if (parts.length >= 2) {
+            const currentProfile = await getUserProfile();
+            await saveUserProfile({
+              email: currentProfile?.email ?? user?.email ?? "",
+              name: currentProfile?.name ?? user?.name ?? "",
+              photo_url: currentProfile?.photo_url,
+            });
+            
+            if (parts[0].trim() === "financial_profile") {
+              const p = await getUserProfile();
+              if (p) {
+                p.financial_profile = parts[1].trim();
+                await AsyncStorage.setItem("@profile", JSON.stringify(p));
+                profileUpdated = true;
+              }
+            }
+            if (parts[0].trim() === "currency") {
+              const p = await getUserProfile();
+              if (p) {
+                p.currency = parts[1].trim();
+                await AsyncStorage.setItem("@profile", JSON.stringify(p));
+                profileUpdated = true;
+              }
+            }
+          }
+        }
+      }
+
+      Alert.alert(
+        "✅ Restauración completa",
+        `Se restauraron:\n• ${restoredTx} transacciones\n• ${restoredObj} objetivos\n${profileUpdated ? "• Configuración de perfil" : ""}`,
+        [{ text: "OK" }]
+      );
+
+      setProfile(await getUserProfile());
+
+    } catch (e: any) {
+      console.log("Restore CSV error:", e);
+      Alert.alert("Error", "No se pudo leer el archivo CSV. Verificá que sea un backup válido de CFO del Hogar.");
+    } finally {
+      setRestoringCSV(false);
+    }
+  };
+
   const handleSignOut = () => {
     Alert.alert("Cerrar sesión", "¿Estás seguro? Tus datos locales se mantienen.", [
       { text: "Cancelar", style: "cancel" },
@@ -490,9 +730,27 @@ export default function SettingsScreen() {
           <Ionicons name="document-text-outline" size={20} color={theme.success} />
           <View style={styles.cardRowInfo}>
             <Text style={[styles.cardRowTitle, { color: theme.textPrimary }]}>Exportar como CSV</Text>
-            <Text style={[styles.cardRowSub, { color: theme.textMuted }]}>Todas las transacciones</Text>
+            <Text style={[styles.cardRowSub, { color: theme.textMuted }]}>Guardar backup local</Text>
           </View>
           {exporting
+            ? <ActivityIndicator size="small" color={theme.primary} />
+            : <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />}
+        </TouchableOpacity>
+        
+        {/* Botón restaurar CSV - Separador */}
+        <View style={[styles.separator, { borderTopColor: theme.border }]} />
+        
+        <TouchableOpacity 
+          style={styles.cardRow}
+          onPress={restoreFromCSV}
+          disabled={restoringCSV}
+        >
+          <Ionicons name="folder-open-outline" size={20} color={theme.warning} />
+          <View style={styles.cardRowInfo}>
+            <Text style={[styles.cardRowTitle, { color: theme.textPrimary }]}>Restaurar desde CSV</Text>
+            <Text style={[styles.cardRowSub, { color: theme.textMuted }]}>Recuperar backup local</Text>
+          </View>
+          {restoringCSV
             ? <ActivityIndicator size="small" color={theme.primary} />
             : <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />}
         </TouchableOpacity>
